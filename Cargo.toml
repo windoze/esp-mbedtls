@@ -12,7 +12,7 @@ lto = "fat"
 opt-level = "s"
 
 
-[profile.release.package.esp-wifi]
+[profile.release.package.esp-radio]
 opt-level = 3
 
 [profile.dev]
@@ -20,33 +20,32 @@ debug = true
 lto = "fat"
 opt-level = "z"
 
-[profile.dev.package.esp-wifi]
+[profile.dev.package.esp-radio]
 opt-level = 3
 
 [dependencies]
-esp-hal = { version = "=1.0.0-rc.0", optional = true }
-esp-backtrace = { version = "0.16", optional = true, features = [
+esp-hal = { version = "1.0.0", optional = true }
+esp-backtrace = { version = "0.18", optional = true, features = [
     "panic-handler",
     "println",
-    "exception-handler",
 ] }
-esp-println = { version = "0.14", optional = true, features = ["log-04"] }
-esp-hal-embassy = { version = "0.8", optional = true }
+esp-println = { version = "0.16", optional = true, features = ["log-04"] }
+esp-rtos = { version = "0.2", optional = true, features = ["embassy", "esp-radio"] }
 
-embassy-time = { version = "0.4.0", optional = true }
-embassy-executor = { version = "0.7", package = "embassy-executor", features = [
+embassy-time = { version = "0.5.0", optional = true }
+embassy-executor = { version = "0.9", package = "embassy-executor", features = [
     "nightly",
 ], optional = true }
-embassy-net = { version = "0.6.0", features = [
+embassy-net = { version = "0.7.0", features = [
     "tcp",
     "udp",
     "dhcpv4",
     "medium-ethernet",
 ], optional = true }
 
-esp-wifi = { version = "0.15.0", optional = true, features = [
-    "sys-logs",
+esp-radio = { version = "0.17.0", optional = true, features = [
     "wifi",
+    "unstable",
 ] }
 blocking-network-stack = { git = "https://github.com/bjoernQ/blocking-network-stack", rev = "b3ecefc222d8806edd221f266999ca339c52d34e" }
 smoltcp = { version = "0.12.0", optional = true, default-features = false, features = [
@@ -68,12 +67,12 @@ static_cell = { version = "2.1", features = ["nightly"] }
 
 esp-mbedtls = { path = "./esp-mbedtls" }
 
-edge-http = { version = "0.5.0", optional = true }
+edge-http = { version = "0.6.0", optional = true }
 edge-nal = { version = "0.5.0", optional = true }
-edge-nal-embassy = { version = "0.5.0", optional = true }
+edge-nal-embassy = { version = "0.7.0", optional = true }
 cfg-if = "1.0.0"
-esp-alloc = { version = "0.8.0", optional = true }
-esp-bootloader-esp-idf = { version = "0.1.0", optional = true }
+esp-alloc = { version = "0.9.0", optional = true }
+esp-bootloader-esp-idf = { version = "0.4.0", optional = true }
 enumset = { version = "1", default-features = false }
 
 [target.'cfg(target_os = "espidf")'.dependencies]
@@ -103,15 +102,16 @@ examples = [
     "esp-hal",
     "esp-backtrace",
     "esp-println",
-    "esp-wifi",
-    "esp-wifi/smoltcp",
+    "esp-radio",
+    "esp-radio/smoltcp",
+    "esp-rtos",
     "smoltcp",
     "esp-alloc",
     "esp-bootloader-esp-idf",
 ]
 examples-async = [
     "examples",
-    "esp-hal-embassy",
+    "esp-rtos",
     "embassy-time",
     "embassy-executor",
     "embassy-net",
@@ -125,42 +125,47 @@ examples-std = ["critical-section/std"]
 
 esp32 = [
     "esp-hal?/esp32",
-    "esp-hal-embassy?/esp32",
+    "esp-rtos?/esp32",
     "esp-backtrace?/esp32",
     "esp-println?/esp32",
-    "esp-wifi?/esp32",
+    "esp-radio?/esp32",
+    "esp-bootloader-esp-idf?/esp32",
     "esp-mbedtls/esp32",
 ]
 esp32c3 = [
     "esp-hal?/esp32c3",
-    "esp-hal-embassy?/esp32c3",
+    "esp-rtos?/esp32c3",
     "esp-backtrace?/esp32c3",
     "esp-println?/esp32c3",
-    "esp-wifi?/esp32c3",
+    "esp-radio?/esp32c3",
+    "esp-bootloader-esp-idf?/esp32c3",
     "esp-mbedtls/esp32c3",
 ]
 esp32c6 = [
     "esp-hal?/esp32c6",
-    "esp-hal-embassy?/esp32c6",
+    "esp-rtos?/esp32c6",
     "esp-backtrace?/esp32c6",
     "esp-println?/esp32c6",
-    "esp-wifi?/esp32c6",
+    "esp-radio?/esp32c6",
+    "esp-bootloader-esp-idf?/esp32c6",
     "esp-mbedtls/esp32c6",
 ]
 esp32s2 = [
     "esp-hal?/esp32s2",
-    "esp-hal-embassy?/esp32s2",
+    "esp-rtos?/esp32s2",
     "esp-backtrace?/esp32s2",
     "esp-println?/esp32s2",
-    "esp-wifi?/esp32s2",
+    "esp-radio?/esp32s2",
+    "esp-bootloader-esp-idf?/esp32s2",
     "esp-mbedtls/esp32s2",
 ]
 esp32s3 = [
     "esp-hal?/esp32s3",
-    "esp-hal-embassy?/esp32s3",
+    "esp-rtos?/esp32s3",
     "esp-backtrace?/esp32s3",
     "esp-println?/esp32s3",
-    "esp-wifi?/esp32s3",
+    "esp-radio?/esp32s3",
+    "esp-bootloader-esp-idf?/esp32s3",
     "esp-mbedtls/esp32s3",
 ]
 

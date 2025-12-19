@@ -10,3 +10,9 @@ Cargo.lock
 .embuild
 
 tmpsrc
+
+CLAUDE.md
+.claude
+.vscode
+.envrc*
+.DS_Store

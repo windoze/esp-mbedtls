@@ -38,9 +38,9 @@ use esp_backtrace as _;
 use esp_mbedtls::{Certificates, Session};
 use esp_mbedtls::{Mode, Tls, TlsError, TlsVersion, X509};
 use esp_println::{logger::init_logger, print, println};
-use esp_wifi::{
+use esp_radio::{
     init,
-    wifi::{ClientConfiguration, Configuration},
+    wifi::{ClientConfig, ModeConfig},
 };
 use hal::{clock::CpuClock, main, rng::Rng, time, timer::timg::TimerGroup};
 use smoltcp::{
@@ -64,12 +64,25 @@ fn main() -> ! {
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
 
-    let mut rng = Rng::new(peripherals.RNG);
+    // esp-rtos must be started before esp-radio can be initialized
+    // For RISC-V chips (ESP32-C3, ESP32-C6), we need to pass a SoftwareInterrupt
+    // For Xtensa chips (ESP32, ESP32-S2, ESP32-S3), only the timer is needed
+    cfg_if::cfg_if! {
+        if #[cfg(any(feature = "esp32", feature = "esp32s2", feature = "esp32s3"))] {
+            esp_rtos::start(timg0.timer0);
+        } else {
+            use esp_hal::interrupt::software::SoftwareInterrupt;
+            // SAFETY: This is safe as we're at the start of main and no other code is using this interrupt
+            esp_rtos::start(timg0.timer0, unsafe { SoftwareInterrupt::<0>::steal() });
+        }
+    }
 
-    let esp_wifi_ctrl = init(timg0.timer0, rng.clone()).unwrap();
+    let rng = Rng::new();
+
+    let esp_radio_ctrl = init().unwrap();
 
     let (mut controller, interfaces) =
-        esp_wifi::wifi::new(&esp_wifi_ctrl, peripherals.WIFI).unwrap();
+        esp_radio::wifi::new(&esp_radio_ctrl, peripherals.WIFI, Default::default()).unwrap();
 
     let mut device = interfaces.sta;
     let iface = create_interface(&mut device);
@@ -88,12 +101,12 @@ fn main() -> ! {
     let wifi_stack = Stack::new(iface, device, sockets, now, rng.random());
 
     println!("Call wifi_connect");
-    let client_config = Configuration::Client(ClientConfiguration {
-        ssid: SSID.try_into().unwrap(),
-        password: PASSWORD.try_into().unwrap(),
-        ..Default::default()
-    });
-    controller.set_configuration(&client_config).unwrap();
+    let client_config = ModeConfig::Client(
+        ClientConfig::default()
+            .with_ssid(SSID.try_into().unwrap())
+            .with_password(PASSWORD.try_into().unwrap()),
+    );
+    controller.set_config(&client_config).unwrap();
     controller.start().unwrap();
     controller.connect().unwrap();
 
@@ -248,7 +261,7 @@ fn timestamp() -> smoltcp::time::Instant {
     )
 }
 
-fn create_interface(device: &mut esp_wifi::wifi::WifiDevice) -> smoltcp::iface::Interface {
+fn create_interface(device: &mut esp_radio::wifi::WifiDevice) -> smoltcp::iface::Interface {
     // users could create multiple instances but since they only have one WifiDevice
     // they probably can't do anything bad with that
     smoltcp::iface::Interface::new(

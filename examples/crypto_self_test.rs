@@ -12,8 +12,8 @@ use esp_println::{logger::init_logger, println};
 
 /// Only used for ROM functions
 #[allow(unused_imports)]
-use esp_wifi::init;
-use hal::{clock::CpuClock, main, rng::Rng, timer::timg::TimerGroup};
+use esp_radio::init;
+use hal::{clock::CpuClock, main, timer::timg::TimerGroup};
 
 pub fn cycles() -> u64 {
     #[cfg(any(feature = "esp32", feature = "esp32s2", feature = "esp32s3"))]
@@ -34,7 +34,7 @@ esp_bootloader_esp_idf::esp_app_desc!();
 fn main() -> ! {
     init_logger(log::LevelFilter::Info);
 
-    // Init ESP-WIFI heap for malloc
+    // Init ESP-RADIO heap for malloc
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
@@ -42,7 +42,20 @@ fn main() -> ! {
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
 
-    let _init = init(timg0.timer0, Rng::new(peripherals.RNG)).unwrap();
+    // esp-rtos must be started before esp-radio can be initialized
+    // For RISC-V chips (ESP32-C3, ESP32-C6), we need to pass a SoftwareInterrupt
+    // For Xtensa chips (ESP32, ESP32-S2, ESP32-S3), only the timer is needed
+    cfg_if::cfg_if! {
+        if #[cfg(any(feature = "esp32", feature = "esp32s2", feature = "esp32s3"))] {
+            esp_rtos::start(timg0.timer0);
+        } else {
+            use esp_hal::interrupt::software::SoftwareInterrupt;
+            // SAFETY: This is safe as we're at the start of main and no other code is using this interrupt
+            esp_rtos::start(timg0.timer0, unsafe { SoftwareInterrupt::<0>::steal() });
+        }
+    }
+
+    let _init = init().unwrap();
 
     let mut tls = Tls::new(peripherals.SHA)
         .unwrap()

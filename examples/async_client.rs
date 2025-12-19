@@ -24,10 +24,10 @@ use esp_mbedtls::{asynch::Session, Certificates, Mode, TlsVersion};
 use esp_mbedtls::{Tls, X509};
 use esp_println::logger::init_logger;
 use esp_println::{print, println};
-use esp_wifi::wifi::{
-    ClientConfiguration, Configuration, WifiController, WifiDevice, WifiEvent, WifiState,
+use esp_radio::wifi::{
+    ClientConfig, ModeConfig, WifiController, WifiDevice, WifiEvent, WifiStaState,
 };
-use esp_wifi::{init, EspWifiController};
+use esp_radio::{init, Controller};
 use hal::{clock::CpuClock, rng::Rng, timer::timg::TimerGroup};
 
 // Patch until https://github.com/embassy-rs/static-cell/issues/16 is fixed
@@ -58,7 +58,7 @@ cfg_if::cfg_if! {
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
-#[esp_hal_embassy::main]
+#[esp_rtos::main]
 async fn main(spawner: Spawner) -> ! {
     init_logger(log::LevelFilter::Info);
 
@@ -68,28 +68,19 @@ async fn main(spawner: Spawner) -> ! {
     esp_alloc::heap_allocator!(size: 72 * 1024);
     esp_alloc::heap_allocator!(#[unsafe(link_section = ".dram2_uninit")] size: 64 * 1024);
 
-    let timg0 = TimerGroup::new(peripherals.TIMG0);
-    let mut rng = Rng::new(peripherals.RNG);
+    let _timg0 = TimerGroup::new(peripherals.TIMG0);
+    let rng = Rng::new();
 
-    let esp_wifi_ctrl = &*mk_static!(
-        EspWifiController<'_>,
-        init(timg0.timer0, rng.clone()).unwrap()
+    let esp_radio_ctrl = &*mk_static!(
+        Controller<'_>,
+        init().unwrap()
     );
 
-    let (controller, interfaces) = esp_wifi::wifi::new(&esp_wifi_ctrl, peripherals.WIFI).unwrap();
+    let (controller, interfaces) = esp_radio::wifi::new(&esp_radio_ctrl, peripherals.WIFI, Default::default()).unwrap();
 
     let wifi_interface = interfaces.sta;
 
-    cfg_if::cfg_if! {
-        if #[cfg(feature = "esp32")] {
-            let timg1 = TimerGroup::new(peripherals.TIMG1);
-            esp_hal_embassy::init(timg1.timer0);
-        } else {
-            use esp_hal::timer::systimer::SystemTimer;
-            let systimer = SystemTimer::new(peripherals.SYSTIMER);
-            esp_hal_embassy::init(systimer.alarm0);
-        }
-    }
+    // esp-rtos is automatically started by the #[esp_rtos::main] macro
 
     let config = Config::dhcpv4(Default::default());
 
@@ -219,18 +210,18 @@ async fn connection(mut controller: WifiController<'static>) {
     println!("start connection task");
     println!("Device capabilities: {:?}", controller.capabilities());
     loop {
-        if matches!(esp_wifi::wifi::wifi_state(), WifiState::StaConnected) {
+        if matches!(esp_radio::wifi::sta_state(), WifiStaState::Connected) {
             // wait until we're no longer connected
             controller.wait_for_event(WifiEvent::StaDisconnected).await;
             Timer::after(Duration::from_millis(5000)).await
         }
         if !matches!(controller.is_started(), Ok(true)) {
-            let client_config = Configuration::Client(ClientConfiguration {
-                ssid: SSID.try_into().unwrap(),
-                password: PASSWORD.try_into().unwrap(),
-                ..Default::default()
-            });
-            controller.set_configuration(&client_config).unwrap();
+            let client_config = ModeConfig::Client(
+                ClientConfig::default()
+                    .with_ssid(SSID.try_into().unwrap())
+                    .with_password(PASSWORD.try_into().unwrap()),
+            );
+            controller.set_config(&client_config).unwrap();
             println!("Starting wifi");
             controller.start_async().await.unwrap();
             println!("Wifi started!");

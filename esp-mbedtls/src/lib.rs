@@ -17,7 +17,7 @@ use embedded_io::Write;
 
 use esp_mbedtls_sys::bindings::*;
 
-// For `malloc`, `calloc` and `free` which are provided by `esp-wifi` on baremetal
+// For `malloc`, `calloc` and `free` which are provided by `esp-radio` on baremetal
 #[cfg(any(
     feature = "esp32",
     feature = "esp32c3",
@@ -25,7 +25,7 @@ use esp_mbedtls_sys::bindings::*;
     feature = "esp32s2",
     feature = "esp32s3"
 ))]
-use esp_wifi as _;
+use esp_radio as _;
 
 #[cfg(feature = "edge-nal")]
 mod edge_nal;
@@ -64,13 +64,36 @@ unsafe fn aligned_calloc(_align: usize, size: usize) -> *const c_void {
     calloc(1, size)
 }
 
-// Baremetal: these will come from `esp-wifi` (i.e. this can only be used together with esp-wifi)
+// Baremetal: these will come from `esp-radio` (i.e. this can only be used together with esp-radio)
 // STD: these will come from `libc` indirectly via the Rust standard library
 extern "C" {
     fn free(ptr: *const c_void);
 
     fn calloc(number: usize, size: usize) -> *const c_void;
+}
 
+// Provide `random()` using esp-hal's hardware RNG for baremetal targets
+#[cfg(any(
+    feature = "esp32",
+    feature = "esp32c3",
+    feature = "esp32c6",
+    feature = "esp32s2",
+    feature = "esp32s3"
+))]
+#[no_mangle]
+unsafe extern "C" fn random() -> c_ulong {
+    ::esp_hal::rng::Rng::new().random() as c_ulong
+}
+
+// STD: use libc's random()
+#[cfg(not(any(
+    feature = "esp32",
+    feature = "esp32c3",
+    feature = "esp32c6",
+    feature = "esp32s2",
+    feature = "esp32s3"
+)))]
+extern "C" {
     fn random() -> c_ulong;
 }
 
@@ -289,7 +312,7 @@ pub struct Certificates<'a> {
     ///
     /// # Client:
     /// In client mode, this certificate will be used for client authentication
-    /// when communicating wiht the server. Use [None] if you don't want to use
+    /// when communicating with the server. Use [None] if you don't want to use
     /// client authentication.
     ///
     /// # Server:
@@ -352,8 +375,8 @@ impl Certificates<'_> {
         // - Consider reconfiguring mbedtls with the custom malloc/free
         //   callbacks that we can actually redirect to `Box`
         //
-        // This way the lib would become completely independent from `esp-wifi`
-        // and would simply requre a Rust global allocator to be set.
+        // This way the lib would become completely independent from `esp-radio`
+        // and would simply require a Rust global allocator to be set.
         // (Or we can even implement a mode of operation of the lib where
         //  it uses a fixed memory pool, and then we layer on top our own little allocator)
         unsafe {
@@ -466,7 +489,7 @@ impl Certificates<'_> {
             )?;
 
             // Set the minimum TLS version
-            // Use a ddirect field modified for compatibility with the `esp-idf-svc` mbedtls
+            // Use a direct field modified for compatibility with the `esp-idf-svc` mbedtls
             (*ssl_config).private_min_tls_version = min_version.to_mbed_tls_version();
 
             mbedtls_ssl_conf_authmode(
@@ -1341,7 +1364,7 @@ pub mod asynch {
     ///
     /// Note also, that the implementation of `PollCtx` is a tad more complex, because it is implemented purely in terms of the
     /// `Read` and `Write` traits, rather than `edge-nal`'s `Readable` and (future) `Writable`, so we need to shuffle single bytes
-    /// between the "mbio" callbacks and the `Session` asunc context to make it work.
+    /// between the "mbio" callbacks and the `Session` async context to make it work.
     ///
     /// On the other hand, this enables `Session` to be used over any streaming transport that implements the `Read` and `Write` traits
     /// (i.e. UART and others).
