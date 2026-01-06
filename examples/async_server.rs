@@ -75,8 +75,21 @@ async fn main(spawner: Spawner) -> ! {
     esp_alloc::heap_allocator!(size: 72 * 1024);
     esp_alloc::heap_allocator!(#[unsafe(link_section = ".dram2_uninit")] size: 64 * 1024);
 
-    let _timg0 = TimerGroup::new(peripherals.TIMG0);
+    let timg0 = TimerGroup::new(peripherals.TIMG0);
     let rng = Rng::new();
+
+    // esp-rtos must be started before esp-radio can be initialized
+    // For RISC-V chips (ESP32-C3, ESP32-C6), we need to pass a SoftwareInterrupt
+    // For Xtensa chips (ESP32, ESP32-S2, ESP32-S3), only the timer is needed
+    cfg_if::cfg_if! {
+        if #[cfg(any(feature = "esp32", feature = "esp32s2", feature = "esp32s3"))] {
+            esp_rtos::start(timg0.timer0);
+        } else {
+            use esp_hal::interrupt::software::SoftwareInterrupt;
+            // SAFETY: This is safe as we're at the start of main and no other code is using this interrupt
+            esp_rtos::start(timg0.timer0, unsafe { SoftwareInterrupt::<0>::steal() });
+        }
+    }
 
     let esp_radio_ctrl = &*mk_static!(
         Controller<'_>,
@@ -86,8 +99,6 @@ async fn main(spawner: Spawner) -> ! {
     let (controller, interfaces) = esp_radio::wifi::new(&esp_radio_ctrl, peripherals.WIFI, Default::default()).unwrap();
 
     let wifi_interface = interfaces.sta;
-
-    // esp-rtos is automatically started by the #[esp_rtos::main] macro
 
     let config = Config::dhcpv4(Default::default());
 
